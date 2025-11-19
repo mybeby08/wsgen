@@ -1,3 +1,4 @@
+import React from 'react'
 import { Pressable, View } from 'react-native'
 import { useRouter } from 'expo-router'
 
@@ -11,17 +12,17 @@ interface Props {
   onToggle: () => void
 }
 
-export function EmployeeRow({ employeeId, name, isOnLeave, onToggle }: Props) {
+export const EmployeeRow = React.memo(function EmployeeRow({ employeeId, name, isOnLeave, onToggle }: Props) {
   const router = useRouter()
 
-  const handlePress = () => {
+  const handlePress = React.useCallback(() => {
     router.push(`/employee/${employeeId}`)
-  }
+  }, [router, employeeId])
 
-  const handleToggle = (e: any) => {
+  const handleToggle = React.useCallback((e: React.BaseSyntheticEvent) => {
     e.stopPropagation()
     onToggle()
-  }
+  }, [onToggle])
 
   return (
     <Pressable
@@ -49,5 +50,5 @@ export function EmployeeRow({ employeeId, name, isOnLeave, onToggle }: Props) {
       </Pressable>
     </Pressable>
   )
-}
+})
 

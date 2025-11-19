@@ -1,5 +1,6 @@
 import type { AISuggestion, Schedule } from '@/types'
 
+import { APP_CONFIG } from '@/constants/config'
 import { getGeminiModel, hasGeminiApiKey } from './geminiClient'
 
 interface GeminiSuggestion {
@@ -22,7 +23,7 @@ export async function getScheduleInsights(schedule: Schedule): Promise<AISuggest
     const text = response.response?.text() ?? ''
 
     const parsed = parseSuggestions(text)
-    return parsed.slice(0, 5)
+    return parsed.slice(0, APP_CONFIG.AI.MAX_SUGGESTIONS)
   } catch (error) {
     console.warn('[AI] Failed to fetch schedule insights', error)
     return []
@@ -36,7 +37,7 @@ function buildPrompt(schedule: Schedule): string {
     dailySchedules: schedule.dailySchedules.map((day) => ({
       date: day.date,
       assignments: day.assignments.map((assignment) => ({
-        employeeId: assignment.employeeId,
+        employeeId: assignment.employeeName,
         shift: assignment.shift,
         scannerId: assignment.scannerId,
       })),

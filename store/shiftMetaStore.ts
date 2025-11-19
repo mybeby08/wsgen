@@ -34,6 +34,7 @@ interface ShiftMetaActions {
     updates: Partial<Omit<ShiftMetaRecord, 'shiftId' | 'createdAt' | 'updatedAt'>>,
   ) => Promise<void>
   remove: (shiftId: string) => Promise<void>
+  reorder: (shiftId: string, direction: 'up' | 'down') => Promise<void>
 }
 
 export const useShiftMetaStore = create<ShiftMetaState & ShiftMetaActions>((set, get) => ({
@@ -90,8 +91,8 @@ export const useShiftMetaStore = create<ShiftMetaState & ShiftMetaActions>((set,
       enabledForGeneration:
         updates.enabledForGeneration ?? existing.enabledForGeneration,
       isOvertime: updates.isOvertime ?? existing.isOvertime,
-      role: updates.role ?? existing.role,
-      note: updates.note ?? existing.note,
+      role: 'role' in updates ? updates.role : existing.role,
+      note: 'note' in updates ? updates.note : existing.note,
       displayOrder: updates.displayOrder ?? existing.displayOrder,
     })
 
@@ -100,6 +101,48 @@ export const useShiftMetaStore = create<ShiftMetaState & ShiftMetaActions>((set,
 
   async remove(shiftId) {
     await deleteShiftMeta(shiftId)
+    await get().load()
+  },
+
+  async reorder(shiftId, direction) {
+    const { metas } = get()
+    const currentIndex = metas.findIndex((m) => m.shiftId === shiftId)
+    if (currentIndex === -1) return
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (targetIndex < 0 || targetIndex >= metas.length) return
+
+    const current = metas[currentIndex]
+    const target = metas[targetIndex]
+
+    // Swap display orders
+    await Promise.all([
+      upsertShiftMeta({
+        shiftId: current.shiftId,
+        label: current.label,
+        startTime: current.startTime,
+        endTime: current.endTime,
+        category: current.category,
+        enabledForGeneration: current.enabledForGeneration,
+        isOvertime: current.isOvertime,
+        role: current.role,
+        note: current.note,
+        displayOrder: target.displayOrder,
+      }),
+      upsertShiftMeta({
+        shiftId: target.shiftId,
+        label: target.label,
+        startTime: target.startTime,
+        endTime: target.endTime,
+        category: target.category,
+        enabledForGeneration: target.enabledForGeneration,
+        isOvertime: target.isOvertime,
+        role: target.role,
+        note: target.note,
+        displayOrder: current.displayOrder,
+      }),
+    ])
+
     await get().load()
   },
 }))

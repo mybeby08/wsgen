@@ -4,7 +4,6 @@ import { FlashList } from '@shopify/flash-list'
 import { useShallow } from 'zustand/react/shallow'
 import { Text } from '@/components/nativewindui/Text'
 import { EmployeeRow } from '@/components/employee/EmployeeRow'
-import { syncDatabase } from '@/services/storage/localDatabase'
 import { useScheduleStore } from '@/store/scheduleStore'
 
 export default function EmployeesScreen() {
@@ -17,29 +16,13 @@ export default function EmployeesScreen() {
     })),
   )
 
-  const [isRefreshing, setIsRefreshing] = React.useState(false)
-
-  const handleRefresh = React.useCallback(async () => {
-    setIsRefreshing(true)
-    try {
-      // Sync database first to get latest data from remote
-      await syncDatabase()
-      // Then reload local data
-      await loadInitialData({ force: true })
-    } catch (error) {
-      console.warn('Refresh failed:', error)
-    } finally {
-      setIsRefreshing(false)
-    }
-  }, [loadInitialData])
-
   return (
     <FlashList
       data={employees}
       keyExtractor={(item) => item.id}
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       refreshControl={
-        <RefreshControl refreshing={isRefreshing || isLoading} onRefresh={handleRefresh} />
+        <RefreshControl refreshing={isLoading} onRefresh={() => void loadInitialData({ force: true })} />
       }
       ListHeaderComponent={
         <>

@@ -7,20 +7,20 @@ import { useColorScheme } from '@/lib/useColorScheme'
 export default function TabsLayout() {
   const { colors } = useColorScheme()
 
+  const screenOptions = React.useMemo(() => ({
+    tabBarActiveTintColor: colors.primary,
+    tabBarInactiveTintColor: colors.grey,
+    tabBarStyle: {
+      backgroundColor: colors.background,
+    },
+    headerStyle: {
+      backgroundColor: colors.background,
+    },
+    headerTintColor: colors.foreground,
+  }), [colors])
+
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.grey,
-        tabBarStyle: {
-          backgroundColor: colors.background,
-        },
-        headerStyle: {
-          backgroundColor: colors.background,
-        },
-        headerTintColor: colors.foreground,
-      }}
-    >
+    <Tabs screenOptions={screenOptions}>
       <Tabs.Screen
         name="index"
         options={{

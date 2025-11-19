@@ -1,31 +1,15 @@
-import type { SQLiteDatabase } from 'expo-sqlite'
 import { createClient, type Client } from '@libsql/client/web'
-import Constants from 'expo-constants'
+
+import { ENV } from '@/constants/config'
 
 type SQLiteBindParams = (string | number | null)[]
-
-// Global database reference for non-React contexts (Zustand stores, services)
-let dbInstance: SQLiteDatabase | null = null
 
 interface SQLiteRunResult {
   rowsAffected: number
 }
 
-interface DatabaseStatus {
-  isInitialized: boolean
-  isOnline: boolean
-  lastSyncTime: number | null
-  frameNumber: number | null
-}
-
 let client: Client | null = null
 let initialized = false
-let dbStatus: DatabaseStatus = {
-  isInitialized: false,
-  isOnline: false,
-  lastSyncTime: null,
-  frameNumber: null,
-}
 
 const TABLE_CREATE_STATEMENTS: string[] = [
   `CREATE TABLE IF NOT EXISTS employees (
@@ -74,140 +58,53 @@ const TABLE_CREATE_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_employees_name ON employees (name);`,
 ]
 
-
-/**
- * Initialize database schema.
- * Called by SQLiteProvider's onInit.
- */
-export async function initDatabase(db: SQLiteDatabase): Promise<void> {
-  console.log('[DB] Initializing database schema...')
-  
-  // Store database instance for non-React contexts
-  dbInstance = db
-  
-  // Create tables if they don't exist (idempotent)
-  for (const statement of TABLE_CREATE_STATEMENTS) {
-    await db.execAsync(statement)
-  }
-  
-  dbStatus.isInitialized = true
-  initialized = true
-  
-  console.log('[DB] Database schema initialized')
-  
-  // Try initial sync with Turso (non-blocking)
-  void performInitialSync()
-}
-
-/**
- * Perform initial sync with Turso remote (non-blocking).
- */
-async function performInitialSync(): Promise<void> {
-  try {
-    console.log('[DB] Attempting initial sync with Turso...')
-    const tursoClient = getTursoClient()
-    const syncResult = await tursoClient.sync()
-    if (syncResult) {
-      dbStatus.lastSyncTime = Date.now()
-      dbStatus.frameNumber = syncResult.frame_no ?? null
-      dbStatus.isOnline = true
-      console.log(`[DB] Initial sync complete. Frame: ${dbStatus.frameNumber}`)
-    }
-  } catch (error) {
-    console.warn('[DB] Initial sync failed, continuing in offline mode:', error)
-    dbStatus.isOnline = false
-  }
-}
-
-/**
- * Get Turso client for sync operations only.
- */
-function getTursoClient(): Client {
+function getDatabase(): Client {
   if (!client) {
-    const extra = Constants.expoConfig?.extra ?? {}
-    const remoteUrl = (extra.tursoDbUrl as string) || ''
-    const authToken = (extra.tursoDbAuthToken as string | undefined) || undefined
+    const url = ENV.TURSO_DB_URL
+    const authToken = ENV.TURSO_DB_AUTH_TOKEN
 
-    if (!remoteUrl) {
-      throw new Error('Turso URL not configured')
+    if (!url) {
+      throw new Error(
+        'Turso database URL not configured. Set TURSO_DB_URL in environment variables.',
+      )
     }
 
-    client = createClient({
-      url: 'file:wgs.db',
-      syncUrl: remoteUrl,
-      authToken: authToken,
-    })
+    client = createClient({ url, authToken })
   }
+
   return client
 }
 
-/**
- * Get database instance for non-React contexts.
- * Throws if database not initialized.
- */
-function getDbInstance(): SQLiteDatabase {
-  if (!dbInstance) {
-    throw new Error('Database not initialized. Ensure SQLiteProvider is mounted.')
+export async function initDatabase(): Promise<void> {
+  const db = getDatabase()
+  for (const statement of TABLE_CREATE_STATEMENTS) {
+    await db.execute(statement)
   }
-  return dbInstance
+  initialized = true
 }
 
-/**
- * Execute a SQL query and return all results.
- * For use in non-React contexts (Zustand stores, services).
- */
+export async function ensureDatabaseInitialized(): Promise<void> {
+  if (!initialized) {
+    await initDatabase()
+  }
+}
+
 export async function queryAll<T = Record<string, unknown>>(
   sql: string,
   params: SQLiteBindParams = [],
 ): Promise<T[]> {
-  const db = getDbInstance()
-  const result = await db.getAllAsync<T>(sql, params)
-  return result ?? []
+  const db = getDatabase()
+  const result = await db.execute({ sql, args: params })
+  return (result.rows ?? []) as T[]
 }
 
-/**
- * Execute a SQL statement (INSERT, UPDATE, DELETE).
- * For use in non-React contexts (Zustand stores, services).
- */
 export async function runStatement(
   sql: string,
   params: SQLiteBindParams = [],
 ): Promise<SQLiteRunResult> {
-  const db = getDbInstance()
-  const result = await db.runAsync(sql, params)
-  return { rowsAffected: result.changes }
-}
-
-export async function ensureDatabaseInitialized(): Promise<void> {
-  // No-op: initialization handled by SQLiteProvider
-  return Promise.resolve()
-}
-
-/**
- * Manually trigger sync with Turso remote database.
- * Use this when connectivity is restored or user explicitly refreshes.
- */
-export async function syncDatabase(): Promise<void> {
-  try {
-    const tursoClient = getTursoClient()
-    console.log('[DB] Manual sync triggered...')
-    const syncResult = await tursoClient.sync()
-    if (syncResult) {
-      dbStatus.lastSyncTime = Date.now()
-      dbStatus.frameNumber = syncResult.frame_no ?? null
-      dbStatus.isOnline = true
-      console.log(`[DB] Manual sync complete. Frame: ${dbStatus.frameNumber}, Frames synced: ${syncResult.frames_synced}`)
-    }
-  } catch (error) {
-    console.error('[DB] Manual sync failed:', error)
-    dbStatus.isOnline = false
-    throw error
+  const db = getDatabase()
+  const result = await db.execute({ sql, args: params })
+  return { 
+    rowsAffected: typeof result.rowsAffected === 'number' ? result.rowsAffected : 0 
   }
-}
-
-/**
- * Get current database status.
- */
-export function getDatabaseStatus(): DatabaseStatus {
-  return { ...dbStatus }
 }

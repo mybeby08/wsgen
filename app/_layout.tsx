@@ -7,18 +7,16 @@ import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { ActivityIndicator, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { SQLiteProvider } from 'expo-sqlite'
-import Constants from 'expo-constants'
 import LottieView from 'lottie-react-native'
 import { useShallow } from 'zustand/react/shallow'
 
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Text } from '@/components/nativewindui/Text'
 import { ThemeToggle } from '@/components/nativewindui/ThemeToggle'
-import { DatabaseErrorBoundary } from '@/components/DatabaseErrorBoundary'
 import { useColorScheme } from '@/lib/useColorScheme'
+import { useAppHydration } from '@/hooks/useSchedule'
 import { useScheduleStore } from '@/store/scheduleStore'
 import { NAV_THEME } from '@/theme'
-import { initDatabase } from '@/services/storage/localDatabase'
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -26,44 +24,25 @@ export {
 } from 'expo-router'
 
 export default function RootLayout() {
-  const extra = Constants.expoConfig?.extra ?? {}
-  const tursoUrl = (extra.tursoDbUrl as string) || ''
-  const tursoToken = (extra.tursoDbAuthToken as string | undefined) || undefined
-
-  return (
-    <DatabaseErrorBoundary>
-      <SQLiteProvider
-        databaseName="wgs.db"
-        options={{
-          useNewConnection: true,
-        }}
-        onInit={initDatabase}
-      >
-        <AppContent />
-      </SQLiteProvider>
-    </DatabaseErrorBoundary>
-  )
-}
-
-function AppContent() {
   const { colorScheme, isDarkColorScheme } = useColorScheme()
-  const { hasHydrated, isLoading, loadInitialData, error } = useScheduleStore(
+  const { hasHydrated, loadInitialData } = useAppHydration()
+  const { isLoading, error } = useScheduleStore(
     useShallow((state) => ({
-      hasHydrated: state.hasHydrated,
       isLoading: state.isLoading,
-      loadInitialData: state.loadInitialData,
       error: state.error,
-    })),
+    }))
   )
 
   React.useEffect(() => {
-    void loadInitialData()
+    loadInitialData().catch((err) => {
+      console.error('Failed to load initial data:', err)
+    })
   }, [loadInitialData])
 
   const showSplash = !hasHydrated
 
   return (
-    <>
+    <ErrorBoundary>
       <StatusBar
         key={`root-status-bar-${isDarkColorScheme ? 'light' : 'dark'}`}
         style={isDarkColorScheme ? 'light' : 'dark'}
@@ -118,7 +97,7 @@ function AppContent() {
           )}
         </NavThemeProvider>
       </GestureHandlerRootView>
-    </>
+    </ErrorBoundary>
   )
 }
 

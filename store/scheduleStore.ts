@@ -1,9 +1,12 @@
-import { addDays, addWeeks, formatISO, startOfWeek } from 'date-fns'
+import { addWeeks, formatISO, startOfWeek } from 'date-fns'
 import { create } from 'zustand'
 
 import type { Schedule, ShiftType } from '@/types'
 import type { EmployeeRecord } from '@/services/storage/localEmployeeService'
 
+import { APP_CONFIG } from '@/constants/config'
+import { ErrorLogger, getUserMessage } from '@/lib/errors'
+import { validateWeekOffset } from '@/utils/validation'
 import { generateScheduleWithAiSuggestions } from '@/services/algorithm/scheduleGenerator'
 import { getAllEmployees, toggleEmployeeLeave } from '@/services/storage/localEmployeeService'
 import {
@@ -54,7 +57,7 @@ type ScheduleActions = {
 }
 
 const defaultWeekStarting = formatISO(
-  startOfWeek(new Date(), { weekStartsOn: 1 }),
+  startOfWeek(new Date(), { weekStartsOn: APP_CONFIG.SCHEDULE.WEEK_STARTS_ON }),
   { representation: 'date' },
 )
 
@@ -82,7 +85,7 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
       const [employees, scheduleRecord, recent] = await Promise.all([
         getAllEmployees(),
         getScheduleByWeek(currentWeekStarting),
-        getRecentSchedules(3),
+        getRecentSchedules(APP_CONFIG.SCHEDULE.RECENT_SCHEDULES_LIMIT),
       ])
 
       set({
@@ -94,11 +97,13 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
         error: undefined,
       })
     } catch (error) {
-      console.error('Failed to load initial data', error)
+      ErrorLogger.log(error instanceof Error ? error : new Error('Failed to load initial data'), {
+        action: 'loadInitialData',
+      })
       set({
         isLoading: false,
         hasHydrated: true,
-        error: 'Unable to load data. Please try again.',
+        error: getUserMessage(error),
       })
     }
   },
@@ -136,10 +141,12 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
       set({ schedule, isGenerating: false })
       await get().refreshRecentSchedules()
     } catch (error) {
-      console.error('Failed to generate schedule', error)
+      ErrorLogger.log(error instanceof Error ? error : new Error('Failed to generate schedule'), {
+        action: 'generateSchedule',
+      })
       set({
         isGenerating: false,
-        error: 'Failed to generate schedule. Please retry.',
+        error: getUserMessage(error),
       })
     }
   },
@@ -160,23 +167,32 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
         isLoading: false,
       }))
     } catch (error) {
-      console.error('Failed to toggle leave status', error)
-      set({ isLoading: false, error: 'Could not update leave status' })
+      ErrorLogger.log(error instanceof Error ? error : new Error('Failed to toggle leave'), {
+        action: 'toggleLeaveStatus',
+        employeeId,
+      })
+      set({ isLoading: false, error: getUserMessage(error) })
     }
   },
 
   async refreshRecentSchedules() {
     try {
-      const recent = await getRecentSchedules(3)
+      const recent = await getRecentSchedules(APP_CONFIG.SCHEDULE.RECENT_SCHEDULES_LIMIT)
       set({ recentSchedules: recent.map(convertRecordToSchedule) })
     } catch (error) {
-      console.error('Failed to load recent schedules', error)
+      ErrorLogger.log(error instanceof Error ? error : new Error('Failed to load recent schedules'), {
+        action: 'refreshRecentSchedules',
+      })
     }
   },
 
   async setWeekOffset(offset: number) {
-    const clampedOffset = Math.max(-8, Math.min(4, offset))
-    const today = startOfWeek(new Date(), { weekStartsOn: 1 })
+    const clampedOffset = validateWeekOffset(
+      offset,
+      APP_CONFIG.SCHEDULE.MAX_WEEK_OFFSET_PAST,
+      APP_CONFIG.SCHEDULE.MAX_WEEK_OFFSET_FUTURE
+    )
+    const today = startOfWeek(new Date(), { weekStartsOn: APP_CONFIG.SCHEDULE.WEEK_STARTS_ON })
     const targetWeek = addWeeks(today, clampedOffset)
     const weekStarting = formatISO(targetWeek, { representation: 'date' })
     const existing = get().weekSchedules[weekStarting]
@@ -206,7 +222,10 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
         isLoading: false,
       }))
     } catch (error) {
-      console.error('Failed to load week schedule', error)
+      ErrorLogger.log(error instanceof Error ? error : new Error('Failed to load week schedule'), {
+        action: 'setWeekOffset',
+        weekStarting,
+      })
       set({ isLoading: false })
     }
   },
@@ -265,8 +284,10 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
 
         await get().refreshRecentSchedules()
       } catch (error) {
-        console.error('Failed to save edited schedule', error)
-        set({ error: 'Failed to save schedule' })
+        ErrorLogger.log(error instanceof Error ? error : new Error('Failed to save edited schedule'), {
+          action: 'exitEditMode',
+        })
+        set({ error: getUserMessage(error) })
       }
     } else {
       set({

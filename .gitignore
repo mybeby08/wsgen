@@ -12,6 +12,10 @@ web-build/
 # expo router
 expo-env.d.ts
 
+# Environment variables (keep .env for expo compatibility, gitignore .env.local)
+.env.local
+.env*.local
+
 
 
 ios

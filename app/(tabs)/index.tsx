@@ -10,7 +10,6 @@ import { LandscapeScheduleGrid } from '@/components/schedule/LandscapeScheduleGr
 import { EditableLandscapeGrid } from '@/components/schedule/EditableLandscapeGrid'
 import { WeekSelector } from '@/components/schedule/WeekSelector'
 import { FairnessWarningsPanel } from '@/components/schedule/FairnessWarningsPanel'
-import { syncDatabase } from '@/services/storage/localDatabase'
 import { useScheduleStore } from '@/store/scheduleStore'
 import { useShallow } from 'zustand/react/shallow'
 import { calculateLiveFairness } from '@/services/algorithm/realtimeFairness'
@@ -99,23 +98,6 @@ export default function ScheduleScreen() {
     void generateSchedule()
   }, [generateSchedule])
 
-  const [isRefreshing, setIsRefreshing] = React.useState(false)
-
-  const handleRefresh = React.useCallback(async () => {
-    if (isEditMode) return
-    setIsRefreshing(true)
-    try {
-      // Sync database first to get latest data from remote
-      await syncDatabase()
-      // Then reload local data
-      await loadInitialData({ force: true })
-    } catch (error) {
-      console.warn('Refresh failed:', error)
-    } finally {
-      setIsRefreshing(false)
-    }
-  }, [isEditMode, loadInitialData])
-
   const handleUpdateAssignment = React.useCallback(
     (date: string, employeeId: string, newShift: any) => {
       updateAssignment(date, employeeId, newShift)
@@ -140,8 +122,8 @@ export default function ScheduleScreen() {
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       refreshControl={
         <RefreshControl
-          refreshing={isRefreshing || isLoading}
-          onRefresh={handleRefresh}
+          refreshing={isLoading}
+          onRefresh={() => void loadInitialData({ force: true })}
           enabled={!isEditMode}
         />
       }

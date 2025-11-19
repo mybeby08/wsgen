@@ -4,6 +4,7 @@ export interface ShiftAssignment {
   employeeId: string
   shift: ShiftType | 'OFF'
   scannerId?: number
+  employeeName?: string
 }
 
 export interface DailySchedule {
