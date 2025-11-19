@@ -1,7 +1,8 @@
-import type { DailySchedule, Employee, ShiftAssignment } from '@/types'
+import type { DailySchedule, Employee, ShiftAssignment, ShiftType } from '@/types'
 
 import type { OffDayMap } from './offDayAssigner'
 import { isWeekend } from './weekUtils'
+import { getShiftCategory } from './shiftCategoryUtils'
 
 interface FairnessInput {
   employees: Employee[]
@@ -30,9 +31,10 @@ function calculateShiftBalanceScore({ employees, dailySchedules }: FairnessInput
 
     const { early, late } = combined.reduce(
       (acc, shift) => {
-        if (shift.shift === 'EARLY_MORNING' || shift.shift === 'MORNING') {
+        const category = getShiftCategory(shift.shift as ShiftType)
+        if (category === 'EARLY') {
           acc.early += 1
-        } else if (shift.shift === 'MID_DAY' || shift.shift === 'LATE') {
+        } else if (category === 'LATE') {
           acc.late += 1
         }
         return acc

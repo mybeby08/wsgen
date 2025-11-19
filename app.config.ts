@@ -31,15 +31,16 @@ const config: ExpoConfig = {
     output: 'static',
     favicon: './assets/favicon.png',
   },
-  plugins: ['expo-router'],
+  plugins: ['expo-router', ['expo-sqlite', { useLibSQL:true }]],
   experiments: {
     typedRoutes: true,
     tsconfigPaths: true,
   },
   extra: {
-    appwriteEndpoint: process.env.APPWRITE_ENDPOINT ?? '',
-    appwriteProjectId: process.env.APPWRITE_PROJECT_ID ?? '',
     geminiApiKey: process.env.GEMINI_API_KEY ?? '',
+    tursoDbUrl: process.env.TURSO_DB_URL ?? process.env.EXPO_PUBLIC_TURSO_DB_URL ?? '',
+    tursoDbAuthToken:
+      process.env.TURSO_DB_AUTH_TOKEN ?? process.env.EXPO_PUBLIC_TURSO_DB_AUTH_TOKEN ?? '',
   },
 }
 

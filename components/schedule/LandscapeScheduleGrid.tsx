@@ -5,7 +5,7 @@ import { format, parseISO } from 'date-fns'
 import type { Schedule } from '@/types'
 
 import { Text } from '@/components/nativewindui/Text'
-import { SHIFT_META } from '@/components/schedule/shiftMeta'
+import { useShiftMetaLookup } from '@/components/schedule/useShiftMetaLookup'
 
 interface Props {
   schedule: Schedule
@@ -14,6 +14,8 @@ interface Props {
 }
 
 export function LandscapeScheduleGrid({ schedule, employeeNames, employeeOrder }: Props) {
+  const { getMetaForShift } = useShiftMetaLookup()
+
   const days = React.useMemo(
     () =>
       schedule.dailySchedules.slice().sort((a, b) => {
@@ -91,15 +93,15 @@ export function LandscapeScheduleGrid({ schedule, employeeNames, employeeOrder }
               </View>
               {days.map((day) => {
                 const assignment = rowAssignments[day.date]
-                const meta = SHIFT_META[assignment?.shift ?? 'OFF']
+                const meta = getMetaForShift(assignment?.shift ?? 'OFF')
                 const isOff = !meta.isWorking
                 return (
                   <View
                     key={`${employeeId}-${day.date}`}
-                    className="w-32 border-l border-border/40 px-3 py-3"
+                    className="w-32 border-l border-border/40 px-3 py-3 flex-col justify-center gap-1"
                   >
                     <Text
-                      className={`text-xs uppercase tracking-widest ${isOff ? 'text-emerald-600 dark:text-emerald-300' : 'text-tertiary'}`}
+                      className={`text-xs uppercase tracking-widest ${isOff ? 'text-emerald-600 dark:text-emerald-300' : 'text-xs text-blue-600'}`}
                     >
                       {isOff ? 'Off' : meta.label}
                     </Text>

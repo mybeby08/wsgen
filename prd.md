@@ -6,7 +6,6 @@
 
 **Key Features:**
 - ✅ Works completely offline (offline-first)
-- ✅ Syncs to cloud when online (Appwrite backend)
 - ✅ Fair scheduling algorithm (balances shifts & weekends)
 - ✅ AI suggestions for improvements (Gemini AI)
 - ✅ PDF export for schedules
@@ -19,18 +18,13 @@
 ```
 USER INTERFACE (React Native/Expo)
          ↓
-LOCAL DATABASE (SQLite) ← Primary data source
-         ↓
-SYNC ENGINE (Automatic background sync)
-         ↓
-CLOUD DATABASE (Appwrite) ← Backup & multi-device
+LOCAL DATABASE (SQLite/libSQL) ← Primary data source
 ```
 
 **Why offline-first?**
 - Instant app performance (no waiting for network)
 - Works in areas with poor connectivity
 - All changes saved locally immediately
-- Syncs automatically when online
 
 ---
 
@@ -55,15 +49,12 @@ cd work-schedule-app
 - `@react-native-community/netinfo` - Detect online/offline
 
 **Backend & AI:**
-- `appwrite` - Backend as a service (v14+)
 - `@google/generative-ai` - Gemini AI integration
 
 **Utilities:**
 - `date-fns` - Date manipulation
 - `@react-pdf/renderer` - PDF generation
 - `expo-file-system` - File operations
-- `expo-sharing` - Share PDFs
-- `expo-constants` - Environment variables
 
 ### Step 1.3: Project Structure
 
@@ -81,9 +72,7 @@ work-schedule-app/
 │   ├── shared/              # Buttons, inputs, cards
 │   └── pdf/                 # PDF template components
 ├── services/
-│   ├── storage/             # SQLite local database
-│   ├── appwrite/            # Cloud backend services
-│   ├── sync/                # Offline sync engine
+│   ├── storage/             # Database access
 │   ├── algorithm/           # Scheduling logic
 │   ├── ai/                  # Gemini AI integration
 │   └── pdf/                 # PDF generation
@@ -95,108 +84,17 @@ work-schedule-app/
 
 ---
 
-## 🔐 PHASE 2: Backend Setup (Appwrite)
-
-### Step 2.1: Environment Configuration
-
-Create `.env` file:
-```
-APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
-APPWRITE_PROJECT_ID=your-project-id
-GEMINI_API_KEY=your-gemini-key
-```
-
-### Step 2.2: Appwrite Project Setup
-
-**In Appwrite Console:**
-1. Create new project: "Work Schedules"
-2. Enable **Anonymous Authentication** (no login required)
-3. Create database: "work-schedules"
-4. Create 4 collections (see schemas below)
-
-### Step 2.3: Database Collections
-
-#### Collection 1: `employees`
-Stores employee information and leave status.
-
-| Field | Type | Attributes |
-|-------|------|------------|
-| `employee_id` | String | Required, Unique |
-| `name` | String | Required |
-| `is_on_leave` | Boolean | Default: false |
-| `updated_at` | DateTime | Auto-update |
-
-#### Collection 2: `schedules`
-Stores weekly schedule data.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `schedule_id` | String | Unique identifier |
-| `week_starting` | DateTime | Monday of the week |
-| `week_ending` | DateTime | Sunday of the week |
-| `daily_schedules` | JSON | Full week of assignments |
-| `fairness_score` | Integer | 0-100 score |
-| `validated` | Boolean | Passed all checks |
-| `created_at` | DateTime | Auto-create |
-| `updated_at` | DateTime | Auto-update |
-
-#### Collection 3: `history`
-Tracks past 6 weeks per employee for fairness calculations.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `employee_id` | String | Indexed for fast lookup |
-| `week_ending` | DateTime | End of work week |
-| `shifts` | JSON Array | All shifts worked |
-| `off_days` | JSON Array | Days off |
-| `weekend_offs` | Integer | Count of weekend days off |
-| `updated_at` | DateTime | Auto-update |
-
-#### Collection 4: `sync_queue`
-Tracks changes waiting to sync to cloud.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `item_id` | String | Unique sync item |
-| `type` | String | employee/schedule/history |
-| `operation` | String | create/update/delete |
-| `data` | JSON | The actual data |
-| `timestamp` | DateTime | When created |
-| `retries` | Integer | Failed sync attempts |
-
-### Step 2.4: Appwrite Service Setup
-
-**`services/appwrite/client.ts`**
-```typescript
-import { Client, Account, Databases } from 'appwrite'
-import Constants from 'expo-constants'
-
-const client = new Client()
-  .setEndpoint(Constants.expoConfig.extra.appwriteEndpoint)
-  .setProject(Constants.expoConfig.extra.appwriteProjectId)
-
-export const account = new Account(client)
-export const databases = new Databases(client)
-```
-
-**`services/appwrite/authService.ts`**
-- Auto-creates anonymous session on first app launch
-- Persists session for future use
-- No user login required
-
----
-
-## 💾 PHASE 3: Local Storage & Offline-First
+## 💾 PHASE 2: Local Storage & Offline-First
 
 ### Step 3.1: SQLite Database Setup
 
 **`services/storage/localDatabase.ts`**
 
-Creates 4 tables matching Appwrite collections:
-- `employees` - Local copy of all employees
-- `schedules` - Local copy of schedules
-- `history` - Local copy of history
-- `sync_queue` - Pending changes to upload
+Creates the core tables used by the app:
+- `employees` - All employees
+- `schedules` - Generated schedules
+- `history` - History used for fairness calculations
+- `shift_metas` - Shift templates and metadata
 
 **Why mirror structure?**
 - Easy to sync (same data shape)
@@ -222,48 +120,6 @@ Each service provides same interface as cloud version:
 - `getForEmployee(id, weeks)` - Get history
 - `save(employeeId, data)` - Save week data
 - `prune()` - Delete data older than 6 weeks
-
-### Step 3.3: Sync Engine
-
-**How it works:**
-
-1. **Write Path (User makes change):**
-   ```
-   User edits data
-     → Save to local SQLite immediately ✅
-     → Add to sync_queue
-     → UI updates instantly
-     → Sync runs in background when online
-   ```
-
-2. **Read Path (User views data):**
-   ```
-   Always read from local SQLite
-     → Instant response
-     → Works offline
-   ```
-
-3. **Sync Process:**
-   ```
-   Every 5 minutes when online:
-     → Check sync_queue for pending items
-     → Upload to Appwrite one by one
-     → On success: remove from queue
-     → On failure: retry later (max 3 times)
-   ```
-
-**`services/sync/syncEngine.ts`** - Core Functions:
-
-- `syncToCloud()` - Push local changes up
-- `syncFromCloud()` - Pull latest data down
-- `scheduleSyncJob()` - Auto-sync every 5 min
-- `handleConflicts()` - Last write wins strategy
-
-**Triggers for sync:**
-- App comes to foreground
-- Network changes from offline → online
-- Every 5 minutes when online
-- Manual sync button (optional)
 
 ---
 
@@ -316,16 +172,6 @@ interface Schedule {
 }
 ```
 
-### Sync Types
-```typescript
-interface SyncStatus {
-  isOnline: boolean
-  isSyncing: boolean
-  lastSyncTime: Date | null
-  pendingCount: number
-}
-```
-
 ---
 
 ## 👥 PHASE 5: Employee Data
@@ -358,7 +204,6 @@ export const INITIAL_EMPLOYEES = [
 - Runs on first app launch
 - Checks if employees already exist
 - If empty: inserts all 14 employees
-- Also seeds Appwrite (run once during setup)
 
 ---
 
@@ -535,25 +380,22 @@ Week score: 85/100
 ## 🚀 Implementation Order
 
 1. ✅ Phase 1: Project setup
-2. ✅ Phase 2: Appwrite backend
-3. ✅ Phase 3: Local SQLite + Sync
-4. ✅ Phase 4: Type definitions
-5. ✅ Phase 5: Employee data
-6. ✅ Phase 6: Scheduling algorithm
-7. ⏭️ Phase 7: AI integration (Gemini)
-8. ⏭️ Phase 8: UI components
-9. ⏭️ Phase 9: PDF export
-10. ⏭️ Phase 10: Testing & polish
+2. ✅ Phase 2: Local SQLite storage
+3. ✅ Phase 3: Type definitions
+4. ✅ Phase 4: Employee data
+5. ✅ Phase 5: Scheduling algorithm
+6. ⏭️ Phase 6: AI integration (Gemini)
+7. ⏭️ Phase 7: UI components
+8. ⏭️ Phase 8: PDF export
+9. ⏭️ Phase 9: Testing & polish
 
 ---
 
 ## 💡 Key Concepts Explained
 
-**Offline-First:** App works without internet. All data stored locally first, synced later.
+**Offline-First:** App works without internet. All data stored locally first.
 
 **Fair Scheduling:** Algorithm analyzes history to ensure everyone gets similar number of early/late shifts and weekend offs.
-
-**Sync Queue:** List of changes waiting to upload to cloud when online.
 
 **Fairness Score:** Number (0-100) measuring how fair the schedule is based on shift balance, weekend distribution, and pattern variety.
 

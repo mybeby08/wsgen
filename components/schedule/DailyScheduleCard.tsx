@@ -4,7 +4,7 @@ import type { DailySchedule } from '@/types'
 
 import { Text } from '@/components/nativewindui/Text'
 import { formatDay } from '@/utils/date'
-import { SHIFT_META } from '@/components/schedule/shiftMeta'
+import { useShiftMetaLookup } from '@/components/schedule/useShiftMetaLookup'
 
 interface Props {
   schedule: DailySchedule
@@ -12,6 +12,8 @@ interface Props {
 }
 
 export function DailyScheduleCard({ schedule, employeeNames = {} }: Props) {
+  const { getMetaForShift } = useShiftMetaLookup()
+
   return (
     <View className="mb-4 rounded-3xl border border-border bg-card p-4 shadow-sm shadow-black/5">
       <View className="flex-row items-baseline justify-between gap-4">
@@ -37,7 +39,7 @@ export function DailyScheduleCard({ schedule, employeeNames = {} }: Props) {
         </View>
 
         {schedule.assignments.map((assignment, index) => {
-          const meta = SHIFT_META[assignment.shift] ?? SHIFT_META.MID_DAY
+          const meta = getMetaForShift(assignment.shift as any)
           const employee = employeeNames[assignment.employeeId] ?? assignment.employeeId
           const isOff = assignment.shift === 'OFF'
 

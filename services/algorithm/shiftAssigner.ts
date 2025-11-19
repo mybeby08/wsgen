@@ -2,35 +2,34 @@ import type { DailySchedule, Employee, ShiftAssignment, ShiftType } from '@/type
 
 import type { OffDayMap } from './offDayAssigner'
 import { getWeekDates } from './weekUtils'
-
-const EARLY_SHIFTS: ShiftType[] = ['EARLY_MORNING', 'MORNING']
-const LATE_SHIFTS: ShiftType[] = ['MID_DAY', 'LATE']
+import type { ShiftCategory } from '@/services/storage/localShiftMetaService'
+import { getGenerationShiftPools, getShiftCategory } from './shiftCategoryUtils'
 
 interface ShiftRequirement {
-  shift: ShiftType
+  category: ShiftCategory
 }
 
 type ShiftStats = Record<string, { early: number; late: number }>
 
 const BASE_REQUIREMENTS: ShiftRequirement[] = [
-  { shift: 'EARLY_MORNING' },
-  { shift: 'EARLY_MORNING' },
-  { shift: 'MORNING' },
-  { shift: 'MORNING' },
-  { shift: 'MID_DAY' },
-  { shift: 'MID_DAY' },
-  { shift: 'LATE' },
-  { shift: 'LATE' },
+  { category: 'EARLY' },
+  { category: 'EARLY' },
+  { category: 'EARLY' },
+  { category: 'EARLY' },
+  { category: 'LATE' },
+  { category: 'LATE' },
+  { category: 'LATE' },
+  { category: 'LATE' },
 ]
 
 const LOW_STAFF_REQUIREMENTS: ShiftRequirement[] = [
-  { shift: 'EARLY_MORNING' },
-  { shift: 'EARLY_MORNING' },
-  { shift: 'EARLY_MORNING' },
-  { shift: 'MID_DAY' },
-  { shift: 'LATE' },
-  { shift: 'LATE' },
-  { shift: 'LATE' },
+  { category: 'EARLY' },
+  { category: 'EARLY' },
+  { category: 'EARLY' },
+  { category: 'LATE' },
+  { category: 'LATE' },
+  { category: 'LATE' },
+  { category: 'LATE' },
 ]
 
 export function assignShifts(
@@ -41,6 +40,10 @@ export function assignShifts(
   const weekDates = getWeekDates(weekStarting)
   const stats = initializeShiftStats(employees)
   const schedules: DailySchedule[] = []
+  const { early, late } = getGenerationShiftPools()
+
+  let earlyIndex = 0
+  let lateIndex = 0
 
   for (const date of weekDates) {
     const availableEmployees = employees.filter((employee) => {
@@ -50,7 +53,26 @@ export function assignShifts(
     })
 
     const requirements = buildShiftPlan(availableEmployees.length)
-    const assignments = fillDailyAssignments(date, requirements, availableEmployees, stats)
+    const assignments = fillDailyAssignments(
+      date,
+      requirements,
+      availableEmployees,
+      stats,
+      {
+        early,
+        late,
+        getNextEarlyIndex: () => {
+          const current = earlyIndex
+          earlyIndex = (earlyIndex + 1) % Math.max(early.length, 1)
+          return current
+        },
+        getNextLateIndex: () => {
+          const current = lateIndex
+          lateIndex = (lateIndex + 1) % Math.max(late.length, 1)
+          return current
+        },
+      },
+    )
     schedules.push({ date, assignments })
   }
 
@@ -60,8 +82,18 @@ export function assignShifts(
 function initializeShiftStats(employees: Employee[]): ShiftStats {
   return employees.reduce<ShiftStats>((acc, employee) => {
     const historyShifts = employee.history?.flatMap((entry) => entry.shifts) ?? []
-    const early = historyShifts.filter((shift) => EARLY_SHIFTS.includes(shift.shift as ShiftType)).length
-    const late = historyShifts.filter((shift) => LATE_SHIFTS.includes(shift.shift as ShiftType)).length
+    const { early, late } = historyShifts.reduce(
+      (stats, shift) => {
+        const category = getShiftCategory(shift.shift as ShiftType)
+        if (category === 'EARLY') {
+          stats.early += 1
+        } else if (category === 'LATE') {
+          stats.late += 1
+        }
+        return stats
+      },
+      { early: 0, late: 0 },
+    )
 
     acc[employee.id] = { early, late }
     return acc
@@ -69,16 +101,32 @@ function initializeShiftStats(employees: Employee[]): ShiftStats {
 }
 
 function buildShiftPlan(availableCount: number): ShiftRequirement[] {
-  if (availableCount <= 7) {
-    return LOW_STAFF_REQUIREMENTS
+  if (availableCount <= 0) return []
+
+  let earlyCount: number
+  let lateCount: number
+
+  if (availableCount <= 8) {
+    // For small/normal teams, keep strong late coverage:
+    // at least 4 LATE (or as many as employees if <4).
+    lateCount = Math.min(4, availableCount)
+    earlyCount = Math.max(0, availableCount - lateCount)
+  } else {
+    // For larger teams, roughly balance EARLY and LATE.
+    // Give LATE the extra person when odd to slightly
+    // favour late coverage.
+    lateCount = Math.ceil(availableCount / 2)
+    earlyCount = availableCount - lateCount
   }
 
-  const plan = [...BASE_REQUIREMENTS]
-  // If more staff is available, add extra mid-day coverage.
-  for (let extra = plan.length; extra < availableCount; extra += 1) {
-    plan.push({ shift: 'MID_DAY' })
+  const requirements: ShiftRequirement[] = []
+  for (let i = 0; i < earlyCount; i += 1) {
+    requirements.push({ category: 'EARLY' })
   }
-  return plan
+  for (let i = 0; i < lateCount; i += 1) {
+    requirements.push({ category: 'LATE' })
+  }
+  return requirements
 }
 
 function fillDailyAssignments(
@@ -86,22 +134,37 @@ function fillDailyAssignments(
   requirements: ShiftRequirement[],
   availableEmployees: Employee[],
   stats: ShiftStats,
+  shiftPools: {
+    early: ShiftType[]
+    late: ShiftType[]
+    getNextEarlyIndex: () => number
+    getNextLateIndex: () => number
+  },
 ): ShiftAssignment[] {
   const assignments: ShiftAssignment[] = []
   const assignedEmployeeIds = new Set<string>()
 
   for (const requirement of requirements) {
-    const employee = selectEmployeeForShift(requirement.shift, availableEmployees, assignedEmployeeIds, stats)
+    const pool = requirement.category === 'EARLY' ? shiftPools.early : shiftPools.late
+    if (!pool.length) continue
+
+    const index =
+      requirement.category === 'EARLY'
+        ? shiftPools.getNextEarlyIndex()
+        : shiftPools.getNextLateIndex()
+    const shiftId = pool[index % pool.length]
+
+    const employee = selectEmployeeForShift(shiftId, availableEmployees, assignedEmployeeIds, stats)
     if (!employee) {
       continue
     }
 
     assignedEmployeeIds.add(employee.id)
-    updateShiftStats(stats, employee.id, requirement.shift)
+    updateShiftStats(stats, employee.id, shiftId)
 
     assignments.push({
       employeeId: employee.id,
-      shift: requirement.shift,
+      shift: shiftId,
       scannerId: (assignments.length % 4) + 1,
     })
   }
@@ -130,15 +193,15 @@ function selectEmployeeForShift(
 function getShiftScore(employeeId: string, shift: ShiftType, stats: ShiftStats): number {
   const { early, late } = stats[employeeId] ?? { early: 0, late: 0 }
 
-  if (EARLY_SHIFTS.includes(shift)) {
+  const category = getShiftCategory(shift)
+  if (category === 'EARLY') {
     return late - early
   }
-
-  if (LATE_SHIFTS.includes(shift)) {
+  if (category === 'LATE') {
     return early - late
   }
 
-  // Mid-day shifts prefer overall balance
+  // Default: prefer balanced employees
   return -Math.abs(early - late)
 }
 
@@ -146,13 +209,10 @@ function updateShiftStats(stats: ShiftStats, employeeId: string, shift: ShiftTyp
   const record = stats[employeeId]
   if (!record) return
 
-  if (EARLY_SHIFTS.includes(shift)) {
+  const category = getShiftCategory(shift)
+  if (category === 'EARLY') {
     record.early += 1
-  } else if (LATE_SHIFTS.includes(shift)) {
-    record.late += 1
-  } else {
-    // Treat mid-day as late for balance purposes
+  } else if (category === 'LATE') {
     record.late += 1
   }
 }
-

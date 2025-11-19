@@ -1,4 +1,4 @@
-export type ShiftType = 'EARLY_MORNING' | 'MORNING' | 'MID_DAY' | 'LATE'
+export type ShiftType = string
 
 export interface ShiftAssignment {
   employeeId: string
