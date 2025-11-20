@@ -17,11 +17,11 @@ export function validateEmployeeName(name: string): void {
   }
 
   // Check for invalid characters
-  const validNamePattern = /^[a-zA-Z\s\-'.]+$/
+  const validNamePattern = /^[a-zA-Z\s\-'.,]+$/
   if (!validNamePattern.test(name)) {
     throw new ValidationError(
       'Invalid characters in name',
-      'Name can only contain letters, spaces, hyphens, and apostrophes'
+      'Name can only contain letters, spaces, hyphens, apostrophes, periods, and commas'
     )
   }
 }

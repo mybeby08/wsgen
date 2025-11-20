@@ -16,6 +16,7 @@ export interface ScheduleRow {
   daily_schedules: string
   fairness_score: number | null
   validated: number
+  ai_cache: string | null
   created_at: string
   updated_at: string
 }

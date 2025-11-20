@@ -41,6 +41,12 @@ export function assignShifts(
   const stats = initializeShiftStats(employees)
   const schedules: DailySchedule[] = []
   const { early, late } = getGenerationShiftPools()
+  
+  // Track consecutive work days per employee
+  const consecutiveWorkDays = new Map<string, string[]>()
+  
+  // Track shift variety per employee
+  const employeeShiftsThisWeek = new Map<string, Set<ShiftType>>()
 
   let earlyIndex = 0
   let lateIndex = 0
@@ -72,7 +78,31 @@ export function assignShifts(
           return current
         },
       },
+      consecutiveWorkDays,
+      employeeShiftsThisWeek,
     )
+    
+    // Update consecutive work tracking and shift variety tracking
+    for (const employee of employees) {
+      const assignment = assignments.find((a) => a.employeeId === employee.id)
+      const isWorking = !!assignment
+      const offDays = offDayMap.get(employee.id) ?? []
+      const isOff = offDays.includes(date)
+      
+      if (isWorking && assignment) {
+        const current = consecutiveWorkDays.get(employee.id) ?? []
+        consecutiveWorkDays.set(employee.id, [...current, date])
+        
+        // Track shift variety
+        const shifts = employeeShiftsThisWeek.get(employee.id) ?? new Set()
+        shifts.add(assignment.shift as ShiftType)
+        employeeShiftsThisWeek.set(employee.id, shifts)
+      } else if (isOff) {
+        // Reset consecutive counter on off day
+        consecutiveWorkDays.set(employee.id, [])
+      }
+    }
+    
     schedules.push({ date, assignments })
   }
 
@@ -140,6 +170,8 @@ function fillDailyAssignments(
     getNextEarlyIndex: () => number
     getNextLateIndex: () => number
   },
+  previousAssignments: Map<string, string[]> = new Map(),
+  employeeShiftsThisWeek: Map<string, Set<ShiftType>> = new Map(),
 ): ShiftAssignment[] {
   const assignments: ShiftAssignment[] = []
   const assignedEmployeeIds = new Set<string>()
@@ -154,7 +186,7 @@ function fillDailyAssignments(
         : shiftPools.getNextLateIndex()
     const shiftId = pool[index % pool.length]
 
-    const employee = selectEmployeeForShift(shiftId, availableEmployees, assignedEmployeeIds, stats)
+    const employee = selectEmployeeForShift(shiftId, availableEmployees, assignedEmployeeIds, stats, previousAssignments, employeeShiftsThisWeek)
     if (!employee) {
       continue
     }
@@ -164,6 +196,7 @@ function fillDailyAssignments(
 
     assignments.push({
       employeeId: employee.id,
+      employeeName: employee.name,
       shift: shiftId,
       scannerId: (assignments.length % 4) + 1,
     })
@@ -177,32 +210,68 @@ function selectEmployeeForShift(
   candidates: Employee[],
   assigned: Set<string>,
   stats: ShiftStats,
+  previousAssignments: Map<string, string[]>,
+  employeeShiftsThisWeek: Map<string, Set<ShiftType>>,
 ): Employee | undefined {
   const pool = candidates.filter((candidate) => !assigned.has(candidate.id))
 
   const scored = pool
     .map((employee) => ({
       employee,
-      score: getShiftScore(employee.id, shift, stats),
+      score: getShiftScore(employee.id, shift, stats, previousAssignments, employeeShiftsThisWeek, employee),
     }))
     .sort((a, b) => b.score - a.score)
 
   return scored[0]?.employee
 }
 
-function getShiftScore(employeeId: string, shift: ShiftType, stats: ShiftStats): number {
+function getShiftScore(
+  employeeId: string,
+  shift: ShiftType,
+  stats: ShiftStats,
+  previousAssignments: Map<string, string[]>,
+  employeeShiftsThisWeek: Map<string, Set<ShiftType>>,
+  employee?: Employee,
+): number {
   const { early, late } = stats[employeeId] ?? { early: 0, late: 0 }
 
-  const category = getShiftCategory(shift)
-  if (category === 'EARLY') {
-    return late - early
+  // Calculate consecutive days worked
+  const recentDays = previousAssignments.get(employeeId) ?? []
+  const consecutiveDays = recentDays.length
+  
+  // Check employee preference for max consecutive days
+  const maxConsecutive = employee?.preferences?.maxConsecutiveDays ?? 6
+  
+  // Penalize consecutive work days (escalating penalty)
+  let consecutivePenalty = 0
+  if (consecutiveDays >= maxConsecutive) {
+    consecutivePenalty = -100 // Strongly avoid exceeding personal limit
+  } else if (consecutiveDays >= maxConsecutive - 1) {
+    consecutivePenalty = -50 // Heavy penalty near limit
+  } else if (consecutiveDays >= maxConsecutive - 2) {
+    consecutivePenalty = -20 // Moderate penalty
+  } else if (consecutiveDays >= 3) {
+    consecutivePenalty = -5 // Light penalty for 4 days
   }
-  if (category === 'LATE') {
-    return early - late
+  
+  // Calculate shift variety bonus
+  const shiftsThisWeek = employeeShiftsThisWeek.get(employeeId) ?? new Set()
+  const hasThisShift = shiftsThisWeek.has(shift)
+  const varietyBonus = hasThisShift ? -8 : 10 // Prefer new shift types
+
+  const category = getShiftCategory(shift)
+  let baseScore = 0
+  
+  if (category === 'EARLY') {
+    baseScore = late - early
+  } else if (category === 'LATE') {
+    baseScore = early - late
+  } else {
+    // Default: prefer balanced employees
+    baseScore = -Math.abs(early - late)
   }
 
-  // Default: prefer balanced employees
-  return -Math.abs(early - late)
+  return baseScore + consecutivePenalty + varietyBonus
 }
 
 function updateShiftStats(stats: ShiftStats, employeeId: string, shift: ShiftType): void {

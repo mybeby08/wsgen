@@ -1,8 +1,10 @@
 import React from 'react'
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native'
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated'
 
 import { Icon } from '@/components/nativewindui/Icon'
 import { Text } from '@/components/nativewindui/Text'
+import { ScheduleSkeleton } from '@/components/skeletons/ScheduleSkeleton'
 import { DailyScheduleCard } from '@/components/schedule/DailyScheduleCard'
 import { EditableDailyScheduleCard } from '@/components/schedule/EditableDailyScheduleCard'
 import { SuggestionCard } from '@/components/schedule/SuggestionCard'
@@ -10,6 +12,7 @@ import { LandscapeScheduleGrid } from '@/components/schedule/LandscapeScheduleGr
 import { EditableLandscapeGrid } from '@/components/schedule/EditableLandscapeGrid'
 import { WeekSelector } from '@/components/schedule/WeekSelector'
 import { FairnessWarningsPanel } from '@/components/schedule/FairnessWarningsPanel'
+import { AIInsightsPanel } from '@/components/ai'
 import { useScheduleStore } from '@/store/scheduleStore'
 import { useShallow } from 'zustand/react/shallow'
 import { calculateLiveFairness } from '@/services/algorithm/realtimeFairness'
@@ -19,11 +22,13 @@ import { useRouter } from 'expo-router'
 
 export default function ScheduleScreen() {
   const router = useRouter()
+  const progressWidth = useSharedValue(0)
   const {
     schedule,
     employees,
     isLoading,
     isGenerating,
+    generationProgress,
     loadInitialData,
     generateSchedule,
     currentWeekStarting,
@@ -39,12 +44,14 @@ export default function ScheduleScreen() {
     updateAssignment,
     undoLastEdit,
     error,
+    aiInsightsEnabled,
   } = useScheduleStore(
     useShallow((state) => ({
       schedule: state.schedule,
       employees: state.employees,
       isLoading: state.isLoading,
       isGenerating: state.isGenerating,
+      generationProgress: state.generationProgress,
       loadInitialData: state.loadInitialData,
       generateSchedule: state.generateSchedule,
       currentWeekStarting: state.currentWeekStarting,
@@ -60,6 +67,7 @@ export default function ScheduleScreen() {
       updateAssignment: state.updateAssignment,
       undoLastEdit: state.undoLastEdit,
       error: state.error,
+      aiInsightsEnabled: state.aiInsightsEnabled,
     })),
   )
   const { width, height } = useWindowDimensions()
@@ -70,6 +78,18 @@ export default function ScheduleScreen() {
   React.useEffect(() => {
     void loadShiftMetas()
   }, [loadShiftMetas])
+
+  // Animate progress bar
+  React.useEffect(() => {
+    progressWidth.value = withSpring(generationProgress, {
+      damping: 20,
+      stiffness: 90,
+    })
+  }, [generationProgress])
+
+  const animatedProgressStyle = useAnimatedStyle(() => ({
+    width: `${progressWidth.value}%`,
+  }))
 
   const [manualGridView, setManualGridView] = React.useState(false)
   const isGridView = isLandscapeOrientation || manualGridView
@@ -109,12 +129,7 @@ export default function ScheduleScreen() {
   const isPastWeek = selectedWeekOffset < 0
 
   if (isLoading && !schedule) {
-    return (
-      <View className="flex-1 items-center justify-center">
-        <ActivityIndicator />
-        <Text className="mt-3">Loading schedule...</Text>
-      </View>
-    )
+    return <ScheduleSkeleton />
   }
 
   return (
@@ -244,16 +259,29 @@ export default function ScheduleScreen() {
             <Pressable
               onPress={handleGenerate}
               disabled={!canGenerateForThisWeek || isGenerating}
-              className={`flex-1 rounded-2xl px-4 py-3 ${
+              className={`relative flex-1 overflow-hidden rounded-2xl px-4 py-3 ${
                 canGenerateForThisWeek && !isGenerating
                   ? 'bg-primary'
                   : 'bg-muted opacity-50'
               }`}
             >
+              {/* Progress Bar Background */}
+              {isGenerating && (
+                <Animated.View
+                  className="absolute inset-0 bg-white/20"
+                  style={animatedProgressStyle}
+                />
+              )}
               <Text
                 className={`text-center text-sm font-semibold ${canGenerateForThisWeek && !isGenerating ? 'text-white' : 'text-tertiary'}`}
               >
-                {isGenerating ? 'Generating...' : isPastWeek ? 'Past Week' : currentSchedule ? 'Regenerate' : 'Generate'}
+                {isGenerating
+                  ? `Generating... ${generationProgress}%`
+                  : isPastWeek
+                    ? 'Past Week'
+                    : currentSchedule
+                      ? '✨ Regenerate'
+                      : '✨ Generate'}
               </Text>
             </Pressable>
           </View>
@@ -345,6 +373,17 @@ export default function ScheduleScreen() {
           </View>
         </View>
       ) : null}
+
+      {/* AI Insights Panel */}
+      {!isEditMode && currentSchedule && aiInsightsEnabled && (
+        <View className="mt-6">
+          <AIInsightsPanel 
+            schedule={currentSchedule} 
+            employees={employees as any}
+            defaultExpanded={false}
+          />
+        </View>
+      )}
     </ScrollView>
   )
 }

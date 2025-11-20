@@ -50,15 +50,15 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <NavThemeProvider value={NAV_THEME[colorScheme]}>
           {showSplash ? (
-            <View className="w-full h-full flex-1 items-center justify-center bg-background">
+            <View className="absolute inset-0 items-center justify-center bg-background">
               <View className="items-center gap-4 px-10">
                 <View className="h-40 w-40">
-<LottieView
-  source={require('../assets/loading.json')}
-  autoPlay
-  loop
-  style={{ width: '100%', height: '100%' }}
-/>
+                  <LottieView
+                    source={require('../assets/loading.json')}
+                    autoPlay
+                    loop
+                    style={{ width: '100%', height: '100%' }}
+                  />
                 </View>
                 <Text variant="title2" className="mt-4 font-bold">
                   Work Schedule Generator

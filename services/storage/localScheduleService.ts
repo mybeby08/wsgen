@@ -10,6 +10,7 @@ export interface ScheduleRecord<TAssignments = unknown> {
   dailySchedules: TAssignments
   fairnessScore: number | null
   validated: boolean
+  aiCache?: any
   createdAt: string
   updatedAt: string
 }
@@ -21,6 +22,7 @@ const mapSchedule = (row: ScheduleRow): ScheduleRecord => ({
   dailySchedules: JSON.parse(row.daily_schedules),
   fairnessScore: row.fairness_score,
   validated: dbBoolToBoolean(row.validated),
+  aiCache: row.ai_cache ? JSON.parse(row.ai_cache) : undefined,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 })
@@ -41,6 +43,7 @@ interface SaveScheduleInput<TAssignments> {
   dailySchedules: TAssignments
   fairnessScore?: number | null
   validated?: boolean
+  aiCache?: any
   createdAt?: string
   updatedAt?: string
 }
@@ -61,9 +64,10 @@ export async function saveSchedule<TAssignments = unknown>(
       daily_schedules,
       fairness_score,
       validated,
+      ai_cache,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       schedule.scheduleId,
       schedule.weekStarting,
@@ -71,6 +75,7 @@ export async function saveSchedule<TAssignments = unknown>(
       JSON.stringify(schedule.dailySchedules),
       schedule.fairnessScore ?? null,
       booleanToDbBool(schedule.validated ?? false),
+      schedule.aiCache ? JSON.stringify(schedule.aiCache) : null,
       createdAt,
       updatedAt,
     ],

@@ -95,8 +95,31 @@ function getPatternPenalty(history: Employee['history']): number {
 }
 
 function pickOffDays(employee: Employee, daySlots: DaySlot[], limitPerDay: number): string[] {
+  // Check for blocked dates in preferences
+  const blockedDates = employee.preferences?.blockedDates ?? []
+  const hasBlockedDates = daySlots.some((slot) => blockedDates.includes(slot.date))
+  
+  if (hasBlockedDates) {
+    // If employee has blocked dates, prioritize those for off days
+    const blockedSlots = daySlots.filter((slot) => blockedDates.includes(slot.date))
+    if (blockedSlots.length >= 2) {
+      const dates = blockedSlots.slice(0, 2).map((slot) => slot.date)
+      assignPair(dates, daySlots)
+      return dates
+    } else if (blockedSlots.length === 1) {
+      // One blocked date, pair with weekend or adjacent day
+      const blockedDate = blockedSlots[0].date
+      const otherDate = findBestPairForDate(blockedDate, daySlots, limitPerDay)
+      if (otherDate) {
+        assignPair([blockedDate, otherDate], daySlots)
+        return [blockedDate, otherDate]
+      }
+    }
+  }
+  
   const needsWeekend = needsWeekendOff(employee)
-  const candidatePairs = buildCandidatePairs(daySlots, needsWeekend)
+  const preferredDays = employee.preferences?.preferredOffDays ?? []
+  const candidatePairs = buildCandidatePairs(daySlots, needsWeekend, preferredDays)
 
   for (const pair of candidatePairs) {
     if (canAssignPair(pair, daySlots, limitPerDay)) {
@@ -119,9 +142,21 @@ function needsWeekendOff(employee: Employee): boolean {
   return weekendCount < 2
 }
 
-function buildCandidatePairs(daySlots: DaySlot[], prioritizeWeekend: boolean): string[][] {
+function buildCandidatePairs(daySlots: DaySlot[], prioritizeWeekend: boolean, preferredDays: number[] = []): string[][] {
   const pairs: string[][] = []
   const weekendDates = daySlots.filter((day) => day.isWeekend).map((day) => day.date)
+  
+  // Prioritize preferred day of week if specified
+  if (preferredDays.length > 0) {
+    const preferredSlots = daySlots.filter((slot) => {
+      const dayOfWeek = new Date(slot.date).getDay()
+      return preferredDays.includes(dayOfWeek)
+    })
+    
+    if (preferredSlots.length >= 2) {
+      pairs.push([preferredSlots[0].date, preferredSlots[1].date])
+    }
+  }
 
   if (prioritizeWeekend && weekendDates.length === 2) {
     pairs.push(weekendDates)
@@ -168,6 +203,27 @@ function assignHighestCapacityDays(daySlots: DaySlot[], limitPerDay: number): st
   const chosen = ordered.slice(0, 2).map((slot) => slot.date)
   assignPair(chosen, daySlots)
   return chosen
+}
+
+function findBestPairForDate(targetDate: string, daySlots: DaySlot[], limitPerDay: number): string | null {
+  const targetIndex = daySlots.findIndex((slot) => slot.date === targetDate)
+  if (targetIndex === -1) return null
+  
+  // Try adjacent days first
+  if (targetIndex > 0 && daySlots[targetIndex - 1].offCount < limitPerDay) {
+    return daySlots[targetIndex - 1].date
+  }
+  if (targetIndex < daySlots.length - 1 && daySlots[targetIndex + 1].offCount < limitPerDay) {
+    return daySlots[targetIndex + 1].date
+  }
+  
+  // Try weekend days
+  const weekendSlot = daySlots.find((slot) => slot.isWeekend && slot.offCount < limitPerDay && slot.date !== targetDate)
+  if (weekendSlot) return weekendSlot.date
+  
+  // Fallback to any available day
+  const availableSlot = daySlots.find((slot) => slot.offCount < limitPerDay && slot.date !== targetDate)
+  return availableSlot?.date ?? null
 }
 
 function seededRandom(seed: number): number {

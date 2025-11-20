@@ -1,9 +1,10 @@
 import React from 'react'
-import { ActivityIndicator, RefreshControl, View } from 'react-native'
+import { RefreshControl } from 'react-native'
 import { FlashList } from '@shopify/flash-list'
 import { useShallow } from 'zustand/react/shallow'
 import { Text } from '@/components/nativewindui/Text'
 import { EmployeeRow } from '@/components/employee/EmployeeRow'
+import { EmployeeListSkeleton } from '@/components/skeletons/EmployeeListSkeleton'
 import { useScheduleStore } from '@/store/scheduleStore'
 
 export default function EmployeesScreen() {
@@ -15,6 +16,10 @@ export default function EmployeesScreen() {
       toggleLeaveStatus: state.toggleLeaveStatus,
     })),
   )
+
+  if (isLoading && employees.length === 0) {
+    return <EmployeeListSkeleton />
+  }
 
   return (
     <FlashList
@@ -33,14 +38,6 @@ export default function EmployeesScreen() {
             Tap a person to toggle leave status. Leave changes sync to your local schedule generator.
           </Text>
         </>
-      }
-      ListEmptyComponent={
-        isLoading ? (
-          <View className="mt-20 items-center">
-            <ActivityIndicator />
-            <Text className="mt-2">Loading employees...</Text>
-          </View>
-        ) : null
       }
       renderItem={({ item }) => (
         <EmployeeRow

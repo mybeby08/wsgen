@@ -18,6 +18,13 @@ export interface AISuggestion {
   impact: 'LOW' | 'MEDIUM' | 'HIGH'
 }
 
+export interface AICacheData {
+  conflicts?: any[]
+  queryResponses?: Record<string, any>
+  explanation?: any
+  timestamp?: string
+}
+
 export interface Schedule {
   id: string
   weekStarting: string
@@ -26,5 +33,6 @@ export interface Schedule {
   fairnessScore: number
   validated: boolean
   aiSuggestions?: AISuggestion[]
+  aiCache?: AICacheData
 }
 

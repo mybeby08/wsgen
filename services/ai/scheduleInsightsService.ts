@@ -3,6 +3,17 @@ import type { AISuggestion, Schedule } from '@/types'
 import { APP_CONFIG } from '@/constants/config'
 import { getGeminiModel, hasGeminiApiKey } from './geminiClient'
 
+/**
+ * Extract first name from "LastName, FirstName" format
+ */
+function getFirstName(fullName: string): string {
+  if (fullName.includes(',')) {
+    const parts = fullName.split(',')
+    return parts[1]?.trim() || fullName
+  }
+  return fullName
+}
+
 interface GeminiSuggestion {
   title: string
   description: string
@@ -37,9 +48,8 @@ function buildPrompt(schedule: Schedule): string {
     dailySchedules: schedule.dailySchedules.map((day) => ({
       date: day.date,
       assignments: day.assignments.map((assignment) => ({
-        employeeId: assignment.employeeName,
+        employee: getFirstName(assignment.employeeName || assignment.employeeId),
         shift: assignment.shift,
-        scannerId: assignment.scannerId,
       })),
     })),
   }

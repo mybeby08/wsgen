@@ -1,5 +1,3 @@
-import 'dotenv/config'
-
 import { ExpoConfig } from 'expo/config'
 
 const config: ExpoConfig = {
@@ -41,6 +39,9 @@ const config: ExpoConfig = {
     tursoDbUrl: process.env.TURSO_DB_URL ?? process.env.EXPO_PUBLIC_TURSO_DB_URL ?? '',
     tursoDbAuthToken:
       process.env.TURSO_DB_AUTH_TOKEN ?? process.env.EXPO_PUBLIC_TURSO_DB_AUTH_TOKEN ?? '',
+  },
+  developmentClient: {
+    silentLaunch: false,
   },
 }
 

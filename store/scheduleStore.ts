@@ -34,10 +34,12 @@ type ScheduleState = {
   weekSchedules: Record<string, Schedule>
   isLoading: boolean
   isGenerating: boolean
+  generationProgress: number
   hasHydrated: boolean
   isEditMode: boolean
   editableSchedule: Schedule | null
   editHistory: EditHistoryEntry[]
+  aiInsightsEnabled: boolean
   error?: string
 }
 
@@ -47,6 +49,8 @@ type ScheduleActions = {
   toggleLeaveStatus: (employeeId: string) => Promise<void>
   refreshRecentSchedules: () => Promise<void>
   setWeekOffset: (offset: number) => Promise<void>
+  toggleAIInsights: (enabled: boolean) => void
+  updateAICache: (cacheData: Partial<Schedule['aiCache']>) => Promise<void>
   navigateWeek: (direction: 'prev' | 'next') => Promise<void>
   goToCurrentWeek: () => Promise<void>
   enterEditMode: () => void
@@ -70,10 +74,12 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
   weekSchedules: {},
   isLoading: false,
   isGenerating: false,
+  generationProgress: 0,
   hasHydrated: false,
   isEditMode: false,
   editableSchedule: null,
   editHistory: [],
+  aiInsightsEnabled: true,
 
   async loadInitialData(options) {
     const { hasHydrated, isLoading, currentWeekStarting } = get()
@@ -114,8 +120,16 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
       return
     }
 
-    set({ isGenerating: true, error: undefined })
+    set({ isGenerating: true, generationProgress: 0, error: undefined })
     try {
+      // Step 1: Preparing (0-20%)
+      set({ generationProgress: 10 })
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      
+      set({ generationProgress: 20 })
+      
+      // Step 2: Generating base schedule (20-60%)
+      set({ generationProgress: 30 })
       const schedule = await generateScheduleWithAiSuggestions({
         employees: employees.map((employee) => ({
           id: employee.id,
@@ -125,7 +139,10 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
         })),
         weekStarting: currentWeekStarting,
       })
+      set({ generationProgress: 60 })
 
+      // Step 3: Saving schedule (60-80%)
+      set({ generationProgress: 70 })
       await saveSchedule({
         scheduleId: schedule.id,
         weekStarting: schedule.weekStarting,
@@ -134,18 +151,28 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
         fairnessScore: schedule.fairnessScore,
         validated: schedule.validated,
       })
+      set({ generationProgress: 80 })
 
-      // Build history records for stats tracking
+      // Step 4: Building history (80-95%)
+      set({ generationProgress: 85 })
       await buildHistoryFromSchedule(schedule)
+      set({ generationProgress: 95 })
 
-      set({ schedule, isGenerating: false })
+      // Step 5: Finalizing (95-100%)
       await get().refreshRecentSchedules()
+      set({ generationProgress: 100 })
+      
+      // Small delay to show 100% before hiding
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      
+      set({ schedule, isGenerating: false, generationProgress: 0 })
     } catch (error) {
       ErrorLogger.log(error instanceof Error ? error : new Error('Failed to generate schedule'), {
         action: 'generateSchedule',
       })
       set({
         isGenerating: false,
+        generationProgress: 0,
         error: getUserMessage(error),
       })
     }
@@ -387,6 +414,46 @@ export const useScheduleStore = create<ScheduleState & ScheduleActions>((set, ge
       editHistory: editHistory.slice(0, -1),
     })
   },
+
+  toggleAIInsights(enabled) {
+    set({ aiInsightsEnabled: enabled })
+  },
+
+  async updateAICache(cacheData) {
+    const { schedule, weekSchedules, selectedWeekOffset, currentWeekStarting } = get()
+    if (!schedule) return
+
+    const updatedCache = {
+      ...schedule.aiCache,
+      ...cacheData,
+      timestamp: new Date().toISOString(),
+    }
+
+    const updatedSchedule = {
+      ...schedule,
+      aiCache: updatedCache,
+    }
+
+    // Save to database
+    await saveSchedule({
+      scheduleId: schedule.id,
+      weekStarting: schedule.weekStarting,
+      weekEnding: schedule.weekEnding,
+      dailySchedules: schedule.dailySchedules,
+      fairnessScore: schedule.fairnessScore,
+      validated: schedule.validated,
+      aiCache: updatedCache,
+    })
+
+    // Update state
+    set({
+      schedule: updatedSchedule,
+      weekSchedules: {
+        ...weekSchedules,
+        [schedule.weekStarting]: updatedSchedule,
+      },
+    })
+  },
 }))
 
 function convertRecordToSchedule(record: ScheduleRecord): Schedule {
@@ -397,6 +464,7 @@ function convertRecordToSchedule(record: ScheduleRecord): Schedule {
     dailySchedules: record.dailySchedules as Schedule['dailySchedules'],
     fairnessScore: record.fairnessScore ?? 0,
     validated: record.validated,
+    aiCache: record.aiCache,
   }
 }
 

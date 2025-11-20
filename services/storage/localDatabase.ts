@@ -25,6 +25,7 @@ const TABLE_CREATE_STATEMENTS: string[] = [
       daily_schedules TEXT NOT NULL,
       fairness_score INTEGER,
       validated INTEGER NOT NULL DEFAULT 0,
+      ai_cache TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );`,

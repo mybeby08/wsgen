@@ -14,6 +14,8 @@ import type { ShiftCategory } from '@/services/storage/localShiftMetaService'
 export default function SettingsScreen() {
   const networkState = useNetworkState()
   const schedule = useScheduleStore((state) => state.schedule)
+  const aiInsightsEnabled = useScheduleStore((state) => state.aiInsightsEnabled)
+  const toggleAIInsights = useScheduleStore((state) => state.toggleAIInsights)
 
 	const shiftMetas = useShiftMetaStore((state) => state.metas)
 	const shiftMetaLoading = useShiftMetaStore((state) => state.isLoading)
@@ -260,6 +262,48 @@ export default function SettingsScreen() {
 				status={shiftStatus}
 				statusColor={shiftStatusColor}
 			/>
+
+			{/* AI Features Section */}
+			<View className="mt-8">
+				<Text variant="title2" className="mb-3 font-bold">
+					AI Features
+				</Text>
+
+				<View className="rounded-3xl border border-border bg-card p-4 shadow-sm shadow-black/5">
+					<View className="flex-row items-center justify-between">
+						<View className="flex-1 pr-4">
+							<View className="flex-row items-center gap-2 mb-1">
+								<Icon name="sparkle" size={16} className="text-primary" />
+								<Text className="font-semibold">AI Insights Panel</Text>
+							</View>
+							<Text color="tertiary" className="text-sm">
+								Show conflict detection, natural language queries, and schedule explanations
+							</Text>
+						</View>
+						<Switch
+							value={aiInsightsEnabled}
+							onValueChange={toggleAIInsights}
+						/>
+					</View>
+
+					{!hasGeminiApiKey() && (
+						<View className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3">
+							<Text className="text-xs text-amber-700">
+								💡 Some AI features require a Gemini API key. Conflict detection works without it!
+							</Text>
+						</View>
+					)}
+
+					{aiInsightsEnabled && (
+						<View className="mt-3 rounded-lg bg-primary/5 p-3">
+							<Text className="text-xs font-semibold text-primary mb-1">Features included:</Text>
+							<Text className="text-xs text-primary/80">• Conflict detection (no API needed)</Text>
+							<Text className="text-xs text-primary/80">• Ask AI questions (requires API)</Text>
+							<Text className="text-xs text-primary/80">• Schedule explanations (has fallback)</Text>
+						</View>
+					)}
+				</View>
+			</View>
 
 			<View className="mt-8">
 				<Text variant="title2" className="mb-3 font-bold">

@@ -18,7 +18,7 @@ interface GenerateScheduleOptions {
 export function generateBaseSchedule(options: GenerateScheduleOptions): Schedule {
   const { employees, weekStarting } = options
   const scheduleId = options.scheduleId ?? `schedule-${weekStarting}`
-  const maxAttempts = options.maxAttempts ?? 3
+  const maxAttempts = options.maxAttempts ?? 5 // Increased from 3
 
   const availableEmployees = employees.filter((employee) => !employee.isOnLeave)
   if (!availableEmployees.length) {
@@ -27,8 +27,13 @@ export function generateBaseSchedule(options: GenerateScheduleOptions): Schedule
 
   const weekEnding = formatISO(addDays(parseISO(weekStarting), 6), { representation: 'date' })
 
+  let bestSchedule: Schedule | null = null
+  let bestScore = 0
+
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const offDayMap = assignOffDays(availableEmployees, weekStarting, attempt + 1)
+    // Vary the seed to get different off-day patterns
+    const seed = attempt + 1 + Math.random() * 0.1
+    const offDayMap = assignOffDays(availableEmployees, weekStarting, seed)
     const dailySchedules = assignShifts(availableEmployees, offDayMap, weekStarting)
     const validated = validateCoverage(dailySchedules)
     const fairnessScore = calculateFairnessScore({
@@ -37,11 +42,7 @@ export function generateBaseSchedule(options: GenerateScheduleOptions): Schedule
       offDayMap,
     })
 
-    if (fairnessScore < 70 && attempt < maxAttempts - 1) {
-      continue
-    }
-
-    return {
+    const schedule: Schedule = {
       id: scheduleId,
       weekStarting,
       weekEnding,
@@ -49,6 +50,32 @@ export function generateBaseSchedule(options: GenerateScheduleOptions): Schedule
       fairnessScore,
       validated,
     }
+
+    // Track best schedule found
+    if (fairnessScore > bestScore) {
+      bestScore = fairnessScore
+      bestSchedule = schedule
+    }
+
+    // Accept excellent schedules immediately
+    if (fairnessScore >= 85 && validated) {
+      return schedule
+    }
+
+    // Accept good schedules after first attempt
+    if (fairnessScore >= 75 && validated && attempt >= 1) {
+      return schedule
+    }
+
+    // Accept fair schedules after third attempt
+    if (fairnessScore >= 70 && validated && attempt >= 2) {
+      return schedule
+    }
+  }
+
+  // Return best schedule found, even if below ideal threshold
+  if (bestSchedule) {
+    return bestSchedule
   }
 
   throw new Error('Unable to generate a valid schedule after multiple attempts')

@@ -27,7 +27,7 @@ export const APP_CONFIG = {
   
   // AI Settings
   AI: {
-    DEFAULT_MODEL: 'gemini-2.0-flash-exp',
+    DEFAULT_MODEL: 'gemini-2.5-flash',
     MAX_SUGGESTIONS: 5,
     TIMEOUT_MS: 15000,
   },
